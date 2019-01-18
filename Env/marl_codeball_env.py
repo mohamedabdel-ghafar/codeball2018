@@ -102,7 +102,7 @@ class CodeBallEnv(object):
         self.process_runner = Runner()
         self.rules = self.process_runner.rules
         self.teammates = list(filter(lambda rob: rob.is_teammate, self.process_runner.curr_game.robots))
-        return self.process_runner.curr_game
+        return CodeBallEnv.process_state(self.process_runner.curr_game)
 
     def land_to_ground(self):
         action = Action()
@@ -122,22 +122,19 @@ class CodeBallEnv(object):
         return action
 
     @staticmethod
-    def process_state(game: Game, curr_robot_id):
-        my_team = list()
+    def process_state(game: Game):
+        my_team = dict()
         other_team = list()
-        my_state = list()
         for c_robot in game.robots:
             rob_state = [c_robot.x, c_robot.y, c_robot.z, c_robot.velocity_x, c_robot.velocity_y, c_robot.velocity_z]
             if c_robot.is_teammate:
-                my_team.append(rob_state)
-                if c_robot.id == curr_robot_id:
-                    my_state = rob_state
+                my_team[c_robot.id] = rob_state
             else:
                 other_team.append(rob_state)
         ball_state = [game.ball.x, game.ball.y, game.ball.z, game.ball.velocity_x, game.ball.velocity_y,
                       game.ball.velocity_z]
 
-        return my_team.extend(other_team), my_state, ball_state
+        return my_team, other_team, ball_state
 
     def stand_in_goal(self, curr_robot):
         target_pos_x = (self.rules.arena.goal_width*(self.process_runner.id_to_indx[curr_robot.id] + 1) /
@@ -191,6 +188,18 @@ class CodeBallEnv(object):
             action.jump_speed = self.rules.ROBOT_MAX_JUMP_SPEED
             return action
 
+    def through_ball(self, curr_rob, ball):
+        if distance_2d(curr_rob.x, curr_rob.z, ball.x, ball.z) > ball.radius:
+            return self.move_to(curr_rob, ball.x, 0, ball.z - ball.radius)
+        action = Action()
+        action.target_velocity_z = self.rules.ROBOT_MAX_GROUND_SPEED*0.8
+        jump = ball.y - ball.radius > 0.05
+        if jump:
+            action.jump_speed = self.rules.ROBOT_MAX_JUMP_SPEED
+        else:
+            action.jump_speed = 0.5 * self.rules.ROBOT_MAX_JUMP_SPEED
+        return action
+
     def move_to_empty_space(self, curr_robot, game):
 
         if game.ball.z > curr_robot.z:
@@ -224,25 +233,72 @@ class CodeBallEnv(object):
             target_z = sum(list(map(lambda x: x[1], enemy_x))) / len(enemy_x)
             return self.move_to(curr_robot, begin + max_diff_x/2, 0, target_z)
 
+    def intercept_ball(self, curr_rob, ball):
+        if ball.y - ball.radius < 0.01:
+            return self.move_to(curr_rob, ball.x, 0, ball.z - ball.radius)
+        else:
+            if distance_2d(curr_rob.x, curr_rob.z, ball.x, ball.z - ball.radius) < 0.5:
+                action = Action()
+                action.jump_speed = self.rules.ROBOT_MAX_JUMP_SPEED
+                return action
+            else:
+                return self.move_to(curr_rob, ball.x, 0, ball.z - ball.radius)
+
+    def intercept_closest_enemy(self, curr_robot, robots):
+        cl_indx = -1
+        cl_dist = 1000000
+        for indx, rob in enumerate(robots):
+            if not rob.is_teammate:
+                new_dist = distance_2d(curr_robot.x, curr_robot.z, rob.x, rob.z)
+                if new_dist < cl_dist:
+                    cl_dist = new_dist
+                    cl_indx  = indx
+        return self.move_to(curr_robot, robots[cl_indx].x, 0, robots[cl_indx].z)
+
+    @staticmethod
+    def jump(jump_mag):
+        action = Action()
+        action.jump_speed = jump_mag
+        return action
+
     def perform_action(self, curr_robot, game, action_index):
         if action_index == 0:
             return self.stand_in_goal(curr_robot)
         elif action_index == 1:
             return self.pass_ball_to_closest_friend(curr_robot, game)
         elif action_index == 2:
-            return self.kick_ball_towards_goal(curr_robot, game.ball)
+            return self.intercept_ball(curr_robot, game.ball)
         elif action_index == 3:
             return self.move_to_empty_space(curr_robot, game)
         elif action_index == 4:
             return self.through_ball(curr_robot, game)
         elif action_index == 5:
-            return self.score_goal(curr_robot, game.ball)
+            return self.kick_ball_towards_goal(curr_robot, game.ball)
         elif action_index == 6:
             return self.intercept_closest_enemy(curr_robot, game.robots)
         elif action_index == 7:
-            return self.jump(curr_robot, 0.5*game.rules.ROBOT_MAX_JUMP_SPEED)
+            return CodeBallEnv.jump(0.5*game.rules.ROBOT_MAX_JUMP_SPEED)
         else:
-            return self.jump(curr_robot, 1*game.rules.ROBOT_MAX_JUMP_SPEED)
+            return CodeBallEnv.jump(1*game.rules.ROBOT_MAX_JUMP_SPEED)
+
+    def step_discrete(self, action_n):
+        to_write_actions = {}
+        for robot_c in self.process_runner.curr_game.robots:
+            if robot_c.is_teammate:
+                ac_index = self.process_runner.id_to_indx[robot_c.id]
+                to_write_actions[robot_c.id] = self.perform_action(robot_c, self.process_runner.curr_game,
+                                                                   ac_index)
+        self.process_runner.remote_process_client.write(to_write_actions, "")
+        new_game_state = self.process_runner.read_game_wrapper()
+        my_indx = 1 - int(new_game_state.players[0].me)
+        if new_game_state.players[my_indx].score != self.curr_me_score:
+            reward = 1
+        elif new_game_state.players[1 - my_indx].score != self.curr_ad_score:
+            reward = -1
+        else:
+            reward = -0.01*(self.rules.arena.depth/2 + self.rules.arena.bottom_radius - new_game_state.ball.z)
+        new_game_state = CodeBallEnv.process_state(new_game_state)
+        return new_game_state, reward
 
     def step(self, action_n):
         # first we have to send the actions to the process, them wait for new state
@@ -328,11 +384,4 @@ if __name__ == "__main__":
     pass_agent = min(list(map(lambda r: r.id, n_env.teammates)))
     while True:
         i = 0
-        for r in n_env.process_runner.curr_game.robots:
-            if r.is_teammate:
-                if r.id == pass_agent:
-                    actions[r.id] = n_env.move_to_empty_space(r, n_env.process_runner.curr_game)
-                else:
-                    actions[r.id] = Action()
-        n_env.process_runner.remote_process_client.write(actions, "")
-        n_env.process_runner.read_game_wrapper()
+        n_env.step_discrete([1, 2])

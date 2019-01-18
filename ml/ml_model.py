@@ -17,12 +17,12 @@ class LearningAgent(object):
 class QNetwork(object):
     def __init__(self, team_size):
         # placeholders to be input during train/test time
-        self.input = tf.placeholder(dtype=tf.float32, shape=[None, 2 * team_size, STATE_SIZE])
+        self.input = tf.placeholder(dtype=tf.float32, shape=[None, 2 * team_size - 1, STATE_SIZE])
         self.action = tf.placeholder(dtype=tf.int32, shape=[None])
-        self.curr_rob_state = tf.placeholder(dtype=tf.float32, shape=[None, 6])
-        self.ball_state = tf.placeholder(dtype=tf.float32, shape=[None, 6])
+        self.curr_rob_state = tf.placeholder(dtype=tf.float32, shape=[None, STATE_SIZE])
+        self.ball_state = tf.placeholder(dtype=tf.float32, shape=[None, STATE_SIZE])
         # slicing
-        self.my_team, self.other_team = tf.split(self.input, 2, axis=1)
+        self.my_team, self.other_team = tf.split(self.input, [team_size - 1, team_size], axis=1)
         my_team_pos = tf.slice(self.my_team, [0, 0, 0], [tf.shape(self.input)[0], team_size, 3])
         other_team_pos = tf.slice(self.other_team, [0, 0, 0], [tf.shape(self.input)[0], team_size, 3])
         my_team_v = tf.slice(self.my_team, [0, 0, 3], [tf.shape(self.input)[0], team_size, 3])
@@ -41,7 +41,8 @@ class QNetwork(object):
         one_hot_action = tf.one_hot(self.action, NUM_ACTIONS, axis=1)
         self.q = tf.reduce_sum(tf.multiply(classify, one_hot_action), axis = 1)
         self.target_q = tf.placeholder(shape=[None, NUM_ACTIONS])
-        self.predict = tf.argmax(classify, 1)
+        self.q_out = classify
+        self.predict = tf.argmax(self.q_out, 1)
         self.loss = tf.reduce_mean(tf.square(self.q - self.target_q))
         self.trainer = tf.train.AdamOptimizer(learning_rate=0.0001)
         self.update = self.trainer.minimize(self.loss)
