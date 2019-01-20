@@ -1,6 +1,6 @@
 from Runner import Runner
 from model import Action, Game, Rules
-from numpy import dot, sum, sqrt, square, array, zeros
+from numpy import dot, sum, sqrt, square, array, zeros, reshape
 from os.path import join, abspath
 import subprocess
 
@@ -11,9 +11,9 @@ EXE_PATH = join("C:\\", "Users", "Mohamed Abdelghaffar", "Downloads", "Compresse
 # EXE_PATH = join("home", "mohamed", "Downloads", "codeball2018-linux", "codeball2018")
 EXE_PATH = abspath(EXE_PATH)
 
-
-ACTION_SHAPE = 5
-STATE_SIZE = 28
+count_actions = zeros([7], dtype=int)
+ACTION_SHAPE = 7
+STATE_SIZE = 6
 
 ROBOT_STOP_DISTANCE = 2
 # features based on which I evaluate each robot in my team :
@@ -83,6 +83,7 @@ class CodeBallEnv(object):
         self.action_space = [Space(True, (ACTION_SHAPE, )) for _ in range(self.n)]
         self.local_process = None
         self.process_runner = None
+        self.flat_state_len = 6 * (2 * n + 1)
 
     def reset(self):
         self.curr_me_score = 0
@@ -95,14 +96,16 @@ class CodeBallEnv(object):
 
         # self.local_process = subprocess.Popen([EXE_PATH,  "--no-countdown", "--p1", "tcp-{}".format(Runner.PORT1),
         #                                        "--p2", "keyboard"])
-        self.local_process = subprocess.Popen([EXE_PATH,   "--no-countdown", "--p1", "tcp-{}".format(Runner.PORT1),
+        self.local_process = subprocess.Popen([EXE_PATH, "--no-countdown", "--team-size",
+                                               "{}".format(self.n),
+                                               "--p1", "tcp-{}".format(Runner.PORT1),
                                               "--p2", "helper"])
         if self.process_runner is not None:
             self.process_runner.remote_process_client.socket.close()
         self.process_runner = Runner()
         self.rules = self.process_runner.rules
         self.teammates = list(filter(lambda rob: rob.is_teammate, self.process_runner.curr_game.robots))
-        return CodeBallEnv.process_state(self.process_runner.curr_game)
+        return self.process_runner.curr_game
 
     def land_to_ground(self):
         action = Action()
@@ -121,20 +124,27 @@ class CodeBallEnv(object):
         action.target_velocity_z = (z - curr_robot.z) * self.rules.ROBOT_MAX_GROUND_SPEED
         return action
 
-    @staticmethod
-    def process_state(game: Game):
-        my_team = dict()
+    def process_state(self, game: Game):
+        if game is None:
+            return zeros([self.flat_state_len])
+        my_team = list()
         other_team = list()
         for c_robot in game.robots:
             rob_state = [c_robot.x, c_robot.y, c_robot.z, c_robot.velocity_x, c_robot.velocity_y, c_robot.velocity_z]
             if c_robot.is_teammate:
-                my_team[c_robot.id] = rob_state
+                my_team.insert(self.process_runner.id_to_indx[c_robot.id], rob_state)
             else:
                 other_team.append(rob_state)
         ball_state = [game.ball.x, game.ball.y, game.ball.z, game.ball.velocity_x, game.ball.velocity_y,
                       game.ball.velocity_z]
 
-        return my_team, other_team, ball_state
+        my_team.extend(other_team)
+        my_team.append(ball_state)
+        return reshape(my_team, [-1])
+
+    @staticmethod
+    def extract_features(flat_state):
+        return reshape(flat_state, [-1, STATE_SIZE])
 
     def stand_in_goal(self, curr_robot):
         target_pos_x = (self.rules.arena.goal_width*(self.process_runner.id_to_indx[curr_robot.id] + 1) /
@@ -225,8 +235,8 @@ class CodeBallEnv(object):
             max_diff_x = -1
             begin = self.rules.arena.width / 2
             for indx in range(len(enemy_x) - 1):
-                max_diff_x = max(max_diff_x, enemy_x[i+1][0] - enemy_x[i][0])
-                begin = enemy_x[i][0]
+                max_diff_x = max(max_diff_x, enemy_x[indx+1][0] - enemy_x[indx][0])
+                begin = enemy_x[indx][0]
             if max_diff_x < self.rules.arena.width / 2 - enemy_x[-1][0]:
                 begin = enemy_x[-1][0]
                 max_diff_x = self.rules.arena.width / 2 - enemy_x[-1][0]
@@ -271,25 +281,25 @@ class CodeBallEnv(object):
         elif action_index == 3:
             return self.move_to_empty_space(curr_robot, game)
         elif action_index == 4:
-            return self.through_ball(curr_robot, game)
+            return self.through_ball(curr_robot, game.ball)
         elif action_index == 5:
             return self.kick_ball_towards_goal(curr_robot, game.ball)
         elif action_index == 6:
             return self.intercept_closest_enemy(curr_robot, game.robots)
-        elif action_index == 7:
-            return CodeBallEnv.jump(0.5*game.rules.ROBOT_MAX_JUMP_SPEED)
-        else:
-            return CodeBallEnv.jump(1*game.rules.ROBOT_MAX_JUMP_SPEED)
 
     def step_discrete(self, action_n):
         to_write_actions = {}
         for robot_c in self.process_runner.curr_game.robots:
             if robot_c.is_teammate:
-                ac_index = self.process_runner.id_to_indx[robot_c.id]
+                rob_index = self.process_runner.id_to_indx[robot_c.id]
+                ac_index = action_n[rob_index]
+                count_actions[ac_index] += 1
                 to_write_actions[robot_c.id] = self.perform_action(robot_c, self.process_runner.curr_game,
                                                                    ac_index)
         self.process_runner.remote_process_client.write(to_write_actions, "")
         new_game_state = self.process_runner.read_game_wrapper()
+        if new_game_state is None:
+            return None, (self.curr_me_score - self.curr_ad_score), True
         my_indx = 1 - int(new_game_state.players[0].me)
         if new_game_state.players[my_indx].score != self.curr_me_score:
             reward = 1
@@ -297,8 +307,9 @@ class CodeBallEnv(object):
             reward = -1
         else:
             reward = -0.01*(self.rules.arena.depth/2 + self.rules.arena.bottom_radius - new_game_state.ball.z)
-        new_game_state = CodeBallEnv.process_state(new_game_state)
-        return new_game_state, reward
+        self.curr_ad_score = new_game_state.players[1-my_indx].score
+        self.curr_me_score = new_game_state.players[my_indx].score
+        return new_game_state, reward, False
 
     def step(self, action_n):
         # first we have to send the actions to the process, them wait for new state
@@ -377,11 +388,3 @@ class Space(object):
         self.shape = shape
 
 
-if __name__ == "__main__":
-    n_env = CodeBallEnv(2)
-    n_env.reset()
-    actions = {}
-    pass_agent = min(list(map(lambda r: r.id, n_env.teammates)))
-    while True:
-        i = 0
-        n_env.step_discrete([1, 2])
