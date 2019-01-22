@@ -3,7 +3,7 @@ from tensorflow.nn import dynamic_rnn
 from tensorflow.contrib.rnn import LSTMCell
 from tensorflow.contrib.layers import fully_connected
 LSTM_NUM_UNITS = 256
-NUM_ACTIONS = 7
+NUM_ACTIONS = 8
 STATE_SIZE = 6
 
 

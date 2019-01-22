@@ -85,6 +85,10 @@ class CodeBallEnv(object):
         self.process_runner = None
         self.flat_state_len = 6 * (2 * n + 1)
 
+    @staticmethod
+    def get_teammates(game: Game):
+        return list(filter(lambda r: r.is_teammate, game.robots))
+
     def reset(self):
         self.curr_me_score = 0
         self.curr_ad_score = 0
@@ -96,7 +100,7 @@ class CodeBallEnv(object):
 
         # self.local_process = subprocess.Popen([EXE_PATH,  "--no-countdown", "--p1", "tcp-{}".format(Runner.PORT1),
         #                                        "--p2", "keyboard"])
-        self.local_process = subprocess.Popen([EXE_PATH, "--no-countdown", "--team-size",
+        self.local_process = subprocess.Popen([EXE_PATH, "--noshow", "--no-countdown", "--team-size",
                                                "{}".format(self.n),
                                                "--p1", "tcp-{}".format(Runner.PORT1),
                                               "--p2", "helper"])
@@ -104,7 +108,6 @@ class CodeBallEnv(object):
             self.process_runner.remote_process_client.socket.close()
         self.process_runner = Runner()
         self.rules = self.process_runner.rules
-        self.teammates = list(filter(lambda rob: rob.is_teammate, self.process_runner.curr_game.robots))
         return self.process_runner.curr_game
 
     def land_to_ground(self):
@@ -163,7 +166,7 @@ class CodeBallEnv(object):
                                 game.ball.z + self.rules.BALL_RADIUS)
         min_dist = 10000
         min_indx = -1
-        for i, friend in enumerate(self.teammates):
+        for i, friend in enumerate(CodeBallEnv.get_teammates(game)):
             if friend.id != curr_robot.id:
                 dist = distance_2d(friend.x, friend.z, curr_robot.x, curr_robot.z)
                 if dist < min_dist:
@@ -286,9 +289,12 @@ class CodeBallEnv(object):
             return self.kick_ball_towards_goal(curr_robot, game.ball)
         elif action_index == 6:
             return self.intercept_closest_enemy(curr_robot, game.robots)
+        elif action_index == 7:
+            return Action()
 
     def step_discrete(self, action_n):
         to_write_actions = {}
+        self.teammates = CodeBallEnv.get_teammates(self.process_runner.curr_game)
         for robot_c in self.process_runner.curr_game.robots:
             if robot_c.is_teammate:
                 rob_index = self.process_runner.id_to_indx[robot_c.id]

@@ -13,6 +13,9 @@ from ml.ml_model import NUM_ACTIONS
 # TODO: take into account bumping off the wall,
 # TODO: add score and time as inputs to the DQN
 # TODO: add no-op action
+# TODO: instead of returning an action we could return a tuple(action, time to execute)
+#       1) while t for this action > 0 -> perform same action type and t--
+#       2) once t reaches 0, choose new action according to e-greedy policy
 
 
 # How many experiences to use for each training step.
@@ -26,7 +29,7 @@ startE = 1
 # Final chance of random action
 endE = 0.1
 # How many steps of training to reduce startE to endE.
-annealing_steps = 10000
+annealing_steps = 10000000
 # How many episodes of game environment to train network with.
 num_episodes = 10000
 # How many steps of random actions before training begins.
@@ -93,7 +96,7 @@ def train(team_size, save_rate, save_dir, load_last=False):
             st_i = os.path.split(st_i)[-1]
             st_i = st_i.split(".")[0].split("-")[1]
             i = int(st_i) + 1
-            print(i)
+            print("loaded model: ", ckpt.model_checkpoint_path)
             saver.restore(sess, ckpt.model_checkpoint_path)
         for i in range(num_episodes):
             ep_buffer = ReplayBuffer()
@@ -174,7 +177,40 @@ def train(team_size, save_rate, save_dir, load_last=False):
         saver.save(sess, save_dir + '/model-' + str(i) + '.ckpt')
 
 
-if __name__ == "__main__":
-    train(3, save_dir="./saves", save_rate=5, load_last=True)
+def export_model(model_num=None, export_path=""):
+    if model_num is None:
+        ckpt = tf.train.get_checkpoint_state(os.path.join("", "saves"))
+        model_path = ckpt.model_checkpoint_path
+    else:
+        model_path = os.path.join("saves", "model-{}.ckpt".format(model_num))
+    with tf.Session as sess:
+        saver = tf.train.Saver()
+        l_a = LearningAgent(2)
+        saver.restore(sess, model_path)
+        tf.io.write_graph(sess.graph, "graph.pbtxt")
 
+
+def test_model(team_size):
+    ckpt = tf.train.get_checkpoint_state(os.path.join("", "saves"))
+    model_path = ckpt.model_checkpoint_path
+    saver = tf.train.Saver()
+    l_a = LearningAgent(team_size)
+    env = CodeBallEnv(team_size)
+    s = env.reset()
+    with tf.Session() as sess:
+        while s is not None:
+            game_repr = CodeBallEnv.extract_features(s)
+            my_team = game_repr[:team_size]
+            other_team = game_repr[team_size: 2 * team_size]
+            ball_state = game_repr[-1]
+            team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
+            action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: team_states,
+                                                                        l_a.main_q.ball_state: ball_states,
+                                                                        l_a.main_q.curr_rob_state: curr_robs})
+            env.step_discrete(action_index_list)
+
+
+if __name__ == "__main__":
+    # train(4, save_dir="./saves", save_rate=5, load_last=False)
+    export_model(595)
 
