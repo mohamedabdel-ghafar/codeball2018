@@ -25,9 +25,9 @@ update_freq = 10
 # Discount factor on the target Q-values
 y = .99
 # Starting chance of random action
-startE = 1
+startE = 0
 # Final chance of random action
-endE = 0.1
+endE = 0
 # How many steps of training to reduce startE to endE.
 annealing_steps = 10000000
 # How many episodes of game environment to train network with.
@@ -211,6 +211,6 @@ def test_model(team_size):
 
 
 if __name__ == "__main__":
-    # train(4, save_dir="./saves", save_rate=5, load_last=False)
-    export_model(595)
+    train(4, save_dir="./saves", save_rate=5)
+    # export_model(595)
 
