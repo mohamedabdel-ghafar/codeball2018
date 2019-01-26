@@ -6,7 +6,7 @@ from RemoteProcessClient import RemoteProcessClient
 
 
 class Runner:
-    PORT1 = 31004
+    PORT1 = 31008
 
     def read_rules_wrapper(self):
         self.rules = self.remote_process_client.read_rules()

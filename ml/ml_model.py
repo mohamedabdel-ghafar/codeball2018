@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.nn import dynamic_rnn
 from tensorflow.contrib.rnn import LSTMCell
-from tensorflow.contrib.layers import fully_connected
+from tensorflow.contrib.layers import fully_connected, softmax
 LSTM_NUM_UNITS = 256
 NUM_ACTIONS = 8
 STATE_SIZE = 6
@@ -27,30 +27,28 @@ class QNetwork(object):
         my_team_pos, my_team_v = tf.split(self.my_team, [3, 3], axis=2)
         other_team_pos, other_team_v = tf.split(self.other_team, [3, 3], axis=2)
         # network
-        pos_lstm = LSTMCell(num_units=LSTM_NUM_UNITS, activation=tf.nn.relu, input_shape=[None, None, 3],
-                            dtype=tf.float32)
-        vel_lstm = LSTMCell(num_units=LSTM_NUM_UNITS, activation=tf.nn.relu, input_shape=[None, None, 3],
-                            dtype=tf.float32)
-        enemy_action_lstm = LSTMCell(num_units=LSTM_NUM_UNITS, activation=tf.nn.tanh, input_shape=[None, team_size, 5])
+        pos_lstm = LSTMCell(num_units=LSTM_NUM_UNITS, input_shape=[None, None, 3],
+                            dtype=tf.float32, activation=tf.nn.tanh)
+        vel_lstm = LSTMCell(num_units=LSTM_NUM_UNITS, input_shape=[None, None, 3],
+                            dtype=tf.float32, activation=tf.nn.tanh)
 
-        _, my_vel_repr = dynamic_rnn(vel_lstm, my_team_v, dtype=tf.float32)
-        _, opp_vel_repr = dynamic_rnn(vel_lstm, other_team_v, dtype=tf.float32)
-        _, my_pos_repr = dynamic_rnn(pos_lstm, my_team_pos, dtype=tf.float32)
-        _, opp_pos_repr = dynamic_rnn(pos_lstm, other_team_pos, dtype=tf.float32)
-        _, opp_ac_repr = dynamic_rnn(enemy_action_lstm, self.opp_action, dtype=tf.float32)
+        _, my_vel_repr = dynamic_rnn(vel_lstm, my_team_v, dtype=tf.float32, scope="my_vel")
+        _, opp_vel_repr = dynamic_rnn(vel_lstm, other_team_v, dtype=tf.float32, scope="opp_vel")
+        _, my_pos_repr = dynamic_rnn(pos_lstm, my_team_pos, dtype=tf.float32, scope="my_pos")
+        _, opp_pos_repr = dynamic_rnn(pos_lstm, other_team_pos, dtype=tf.float32,  scope="opp_pos")
         my_vel_repr = my_vel_repr.h
         my_pos_repr = my_pos_repr.h
         opp_vel_repr = opp_vel_repr.h
         opp_pos_repr = opp_pos_repr.h
-        opp_ac_repr = opp_ac_repr.h
 
         fc_in = tf.concat([self.curr_rob_state, self.ball_state, my_vel_repr, opp_vel_repr, my_pos_repr, opp_pos_repr,
-                           opp_ac_repr, tf.reshape(tf.cast(self.action, tf.float32), [-1, 1])], axis=1)
-        fc_out = fully_connected(fc_in, 1024)
-        classify = fully_connected(fc_out, NUM_ACTIONS)
+                           tf.reshape(tf.cast(self.action, tf.float32), [-1, 1])], axis=1)
+        fc_out = fully_connected(fc_in, 1024, activation_fn=tf.nn.leaky_relu)
+        classify = fully_connected(fc_out, NUM_ACTIONS, activation_fn=tf.nn.leaky_relu)
+        classify = softmax(classify)
         one_hot_action = tf.one_hot(self.action, NUM_ACTIONS)
         self.q = tf.reduce_sum(tf.multiply(classify, one_hot_action), axis=1)
-        self.target_q = tf.placeholder(shape=[None, NUM_ACTIONS], dtype=tf.float32)
+        self.target_q = tf.placeholder(shape=[None], dtype=tf.float32)
         self.q_out = classify
         self.predict = tf.argmax(self.q_out, 1)
         self.loss = tf.reduce_mean(tf.square(self.q - self.target_q))

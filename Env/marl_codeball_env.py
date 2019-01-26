@@ -11,7 +11,7 @@ EXE_PATH = join("C:\\", "Users", "Mohamed Abdelghaffar", "Downloads", "Compresse
 # EXE_PATH = join("home", "mohamed", "Downloads", "codeball2018-linux", "codeball2018")
 EXE_PATH = abspath(EXE_PATH)
 
-count_actions = zeros([7], dtype=int)
+count_actions = zeros([8], dtype=int)
 ACTION_SHAPE = 7
 STATE_SIZE = 6
 
@@ -94,71 +94,6 @@ class CodeBallEnv(object):
         self.process_runner = None
         self.flat_state_len = 6 * (2 * n + 1) + 5
 
-    def is_bumping_into_wall(self, ball, curr_rob):
-        max_speed = self.rules.ROBOT_MAX_GROUND_SPEED * 2**0.5
-        can_bump_1 = ball.velocity_z > 0
-        can_bump_2 = ball.velocity_x > 0
-        # wall 1 and/or wall 2
-        dampened = ball.velocity_y < 0 and ball.y > self.rules.BALL_RADIUS
-        if can_bump_1 and can_bump_2:
-            dest_z = self.rules.arena.depth * 0.5
-            dest_x, t = get_dest_2_nd(dest_z, ball.z, ball.x, ball.velocity_z, ball.velocity_x)
-            if - 0.5 * self.rules.arena.width < dest_x < - 0.5 * self.rules.arena.goal_width or \
-                    0.5 * self.rules.arena.goal_width < dest_x < 0.5 * self.rules.arena.width:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z) / max_speed, dest_x, dest_z
-            # now we handle wall 2
-            dest_x = 0.5 * self.rules.arena.width
-            dest_z, t = get_dest_2_nd(dest_x, ball.x, ball.z, ball.velocity_x * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_z * dampened * self.rules.BALL_ARENA_E)
-            if -0.5 * self.rules.arena.depth < dest_z < 0.5 * self.rules.arena.depth:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z), dest_x, dest_z
-            else:
-                return False, dest_x, dest_z
-        elif can_bump_1 and not can_bump_2:
-            # wall 1 and/ or wall 4
-            dest_z = self.rules.arena.depth * 0.5
-            dest_x, t = get_dest_2_nd(dest_z, ball.z, ball.x, ball.velocity_z * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_x * dampened * self.rules.BALL_ARENA_E)
-            if - 0.5 * self.rules.arena.width < dest_x < - 0.5 * self.rules.arena.goal_width or \
-                    0.5 * self.rules.arena.goal_width < dest_x < 0.5 * self.rules.arena.width:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z) / max_speed, dest_x, dest_z
-            dest_x = - 0.5 * self.rules.arena.width
-            dest_z, t = get_dest_2_nd(dest_x, ball.x, ball.z, ball.velocity_x * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_z * dampened * self.rules.BALL_ARENA_E)
-            if -0.5 * self.rules.arena.depth < dest_z < 0.5 * self.rules.arena.depth:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z), dest_x, dest_z
-            else:
-                return False, dest_x, dest_z
-        elif not can_bump_1 and can_bump_2:
-            dest_z = self.rules.arena.depth * - 0.5
-            dest_x, t = get_dest_2_nd(dest_z, ball.z, ball.x, ball.velocity_z * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_x * dampened * self.rules.BALL_ARENA_E)
-            if - 0.5 * self.rules.arena.width < dest_x < - 0.5 * self.rules.arena.goal_width or \
-                    0.5 * self.rules.arena.goal_width < dest_x < 0.5 * self.rules.arena.width:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z) / max_speed, dest_x, dest_z
-            # now we handle wall 2
-            dest_x = 0.5 * self.rules.arena.width
-            dest_z, t = get_dest_2_nd(dest_x, ball.x, ball.z, ball.velocity_x * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_z * dampened * self.rules.BALL_ARENA_E)
-            if -0.5 * self.rules.arena.depth < dest_z < 0.5 * self.rules.arena.depth:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z), dest_x, dest_z
-            else:
-                return False, dest_x, dest_z
-        else:
-            dest_z = self.rules.arena.depth * - 0.5
-            dest_x, t = get_dest_2_nd(dest_z, ball.z, ball.x, ball.velocity_z * dampened * self.rules.BALL_ARENA_E,
-                                      ball.velocity_x * dampened * self.rules.BALL_ARENA_E)
-            if - 0.5 * self.rules.arena.width < dest_x < - 0.5 * self.rules.arena.goal_width or \
-                    0.5 * self.rules.arena.goal_width < dest_x < 0.5 * self.rules.arena.width:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z) / max_speed, dest_x, dest_z
-            # now we handle wall 2
-            dest_x = - 0.5 * self.rules.arena.width
-            dest_z, t = get_dest_2_nd(dest_x, ball.x, ball.z, ball.velocity_x, ball.velocity_z)
-            if -0.5 * self.rules.arena.depth < dest_z < 0.5 * self.rules.arena.depth:
-                return t < distance_2d(curr_rob.x, curr_rob.z, dest_x, dest_z), dest_x, dest_z
-            else:
-                return False, dest_x, dest_z
-
     @staticmethod
     def get_teammates(game: Game):
         return list(filter(lambda r: r.is_teammate, game.robots))
@@ -174,7 +109,7 @@ class CodeBallEnv(object):
 
         # self.local_process = subprocess.Popen([EXE_PATH,  "--no-countdown", "--p1", "tcp-{}".format(Runner.PORT1),
         #                                        "--p2", "keyboard"])
-        self.local_process = subprocess.Popen([EXE_PATH, "--no-countdown", "--team-size",
+        self.local_process = subprocess.Popen([EXE_PATH, "--noshow", "--no-countdown", "--team-size",
                                                "{}".format(self.n),
                                                "--p1", "tcp-{}".format(Runner.PORT1),
                                                "--p2", "helper"])
@@ -232,13 +167,10 @@ class CodeBallEnv(object):
             return self.land_to_ground()
         return self.move_to(curr_robot, target_pos_x, 0, target_pos_z)
 
-    def pass_ball_to_closest_friend(self, curr_robot, game: Game, is_ball_bumping_into_wall: bool):
+    def pass_ball_to_closest_friend(self, curr_robot, game: Game):
         dist_to_ball = distance_3d(curr_robot.x, curr_robot.y, curr_robot.z, game.ball.x, game.ball.y, game.ball.z)
         if not curr_robot.touch:
             return self.land_to_ground()
-        # handle ball pumping of walls
-        if is_ball_bumping_into_wall:
-            return Action()
         if dist_to_ball > ROBOT_STOP_DISTANCE + game.ball.radius:
             return self.move_to(curr_robot, game.ball.x + self.rules.BALL_RADIUS, 0,
                                 game.ball.z + self.rules.BALL_RADIUS)
@@ -268,28 +200,17 @@ class CodeBallEnv(object):
         else:
             return self.move_to(curr_robot, target_x, 0, target_z)
 
-    def kick_ball_towards_goal(self, curr_rob, ball, is_ball_bumping_into_wall: bool, d_x, d_z):
+    def kick_ball_towards_goal(self, curr_rob, ball):
         dist_to_ball = distance_2d(curr_rob.x, curr_rob.z, ball.x, ball.z)
-        if dist_to_ball <= 2**0.5 * ball.radius + 0.01:
-            action = Action()
-            action.target_velocity_x = 0
-            action.target_velocity_z = self.rules.ROBOT_MAX_GROUND_SPEED
-            action.jump_speed = self.rules.ROBOT_MAX_JUMP_SPEED
-            return action
-        elif is_ball_bumping_into_wall:
-            r_d_x, r_d_z, _ = diff_3d(curr_rob.x, curr_rob.z, 0, d_x, d_z, 0,)
-            vnx = ball.velocity_x * self.rules.BALL_ARENA_E * -1
-            vnz = ball.velocity_z * self.rules.BALL_ARENA_E * -1
-            l = dot_2d(vnx, vnz, r_d_x, r_d_z) / length_2d(vnx, vnz)
-            p_x = d_x + l * vnx
-            p_z = d_z + l * vnz
-            return self.move_to(curr_rob, p_x, 0, p_z)
-        else:
+        if dist_to_ball > 2**0.5 * ball.radius + 0.01:
             return self.move_to(curr_rob, ball.x - ball.radius, 0, ball.z - ball.radius)
+        else:action = Action()
+        action.target_velocity_x = 0
+        action.target_velocity_z = self.rules.ROBOT_MAX_GROUND_SPEED
+        action.jump_speed = self.rules.ROBOT_MAX_JUMP_SPEED
+        return action
 
-    def through_ball(self, curr_rob, ball, is_ball_bumping_into_wall: bool):
-        if is_ball_bumping_into_wall:
-            return Action()
+    def through_ball(self, curr_rob, ball):
         if distance_2d(curr_rob.x, curr_rob.z, ball.x, ball.z) > ball.radius:
             return self.move_to(curr_rob, ball.x, 0, ball.z - ball.radius)
         action = Action()
@@ -334,9 +255,7 @@ class CodeBallEnv(object):
             target_z = sum(list(map(lambda x: x[1], enemy_x))) / len(enemy_x)
             return self.move_to(curr_robot, begin + max_diff_x/2, 0, target_z)
 
-    def intercept_ball(self, curr_rob, ball, is_ball_bumping_into_wall: bool):
-        if is_ball_bumping_into_wall:
-            return Action()
+    def intercept_ball(self, curr_rob, ball):
         if ball.y - ball.radius < 0.01:
             return self.move_to(curr_rob, ball.x, 0, ball.z - ball.radius)
         else:
@@ -365,19 +284,18 @@ class CodeBallEnv(object):
         return action
 
     def perform_action(self, curr_robot, game, action_index):
-        bumping, d_x, d_z = self.is_bumping_into_wall(game.ball, curr_robot)
         if action_index == 0:
             return self.stand_in_goal(curr_robot)
         elif action_index == 1:
-            return self.pass_ball_to_closest_friend(curr_robot, game, bumping)
+            return self.pass_ball_to_closest_friend(curr_robot, game)
         elif action_index == 2:
-            return self.intercept_ball(curr_robot, game.ball, bumping)
+            return self.intercept_ball(curr_robot, game.ball)
         elif action_index == 3:
             return self.move_to_empty_space(curr_robot, game)
         elif action_index == 4:
-            return self.through_ball(curr_robot, game.ball, bumping)
+            return self.through_ball(curr_robot, game.ball)
         elif action_index == 5:
-            return self.kick_ball_towards_goal(curr_robot, game.ball, bumping)
+            return self.kick_ball_towards_goal(curr_robot, game.ball)
         elif action_index == 6:
             return self.intercept_closest_enemy(curr_robot, game.robots)
         elif action_index == 7:
@@ -396,7 +314,7 @@ class CodeBallEnv(object):
         self.process_runner.remote_process_client.write(to_write_actions, "")
         new_game_state = self.process_runner.read_game_wrapper()
         if new_game_state is None:
-            return None, (self.curr_me_score - self.curr_ad_score), True
+            return None, 0, True
         my_indx = 1 - int(new_game_state.players[0].me)
         if new_game_state.players[my_indx].score != self.curr_me_score:
             reward = 1
@@ -492,9 +410,7 @@ if __name__ == "__main__":
         actions = {}
         for rb in my_game.robots:
             if rb.is_teammate:
-                bumping, d_x, d_z = env.is_bumping_into_wall(my_game.ball, rb)
-                actions[rb.id] = env.kick_ball_towards_goal(rb, my_game.ball,
-                                                            bumping, d_x, d_z)
+                actions[rb.id] = env.intercept_closest_enemy(rb, my_game.robots)
         env.process_runner.remote_process_client.write(actions, "")
         my_game = env.process_runner.read_game_wrapper()
 
