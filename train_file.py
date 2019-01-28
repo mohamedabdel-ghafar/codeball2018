@@ -25,13 +25,13 @@ update_freq = 500
 # Discount factor on the target Q-values
 y = .99
 # Starting chance of random action
-startE = 0.8836
+startE = 1
 # Final chance of random action
-endE = 0
+endE = 0.1
 #
 total_steps_2 = sum([962623, 962777, 964412, 961574, 964653, 963611, 963644, 963174])
 # How many steps of training to reduce startE to endE.
-annealing_steps = 100000
+annealing_steps = 10000000
 # How many episodes of game environment to train network with.
 num_episodes = 10000
 # How many steps of random actions before training begins.
@@ -85,7 +85,7 @@ def train(team_size, save_rate, save_dir, load_last=False):
     l_a = LearningAgent(team_size)
     train_vars = tf.trainable_variables()
     target_ops = update_target_graph(train_vars, tau)
-    step_drop = (startE - endE) // annealing_steps
+    step_drop = (startE - endE) / annealing_steps
     e = startE
     jList = []
     rList = []
@@ -187,6 +187,8 @@ def train(team_size, save_rate, save_dir, load_last=False):
                 print("Saved Model")
                 print("count actions: ", list(count_actions))
                 print("curr e:", round(e, 4))
+            if i % 20 == 0:
+                test_model(team_size)
             if len(rList) % 10 == 0:
                 print(total_steps, np_mean(rList[-10:]), e)
         saver.save(sess, save_dir + '/model-' + str(i) + '.ckpt')
@@ -209,23 +211,25 @@ def test_model(team_size):
     ckpt = tf.train.get_checkpoint_state(os.path.join("", "saves"))
     model_path = ckpt.model_checkpoint_path
 
-    env = CodeBallEnv(team_size)
+    env = CodeBallEnv(team_size, show=True)
     s = env.reset()
     i = 0
     prev_ac = zeros([team_size])
-    with tf.Session() as sess:
+    test_graph = tf.Graph()
+    with tf.Session(graph=test_graph) as sess:
         l_a = LearningAgent(team_size)
         saver = tf.train.Saver()
         saver.restore(sess=sess, save_path=model_path)
-        s = env.process_state(s)
-        game_repr = CodeBallEnv.extract_features(s)
-        my_team = game_repr[:team_size]
-        other_team = game_repr[team_size: 2 * team_size]
-        ball_state = game_repr[-1]
-        team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
+
         with tf.variable_scope("test_graph") as test_grpah:
             while s is not None:
-                if i % 100 == 0:
+                s = env.process_state(s)
+                game_repr = CodeBallEnv.extract_features(s)
+                my_team = game_repr[:team_size]
+                other_team = game_repr[team_size: 2 * team_size]
+                ball_state = game_repr[-1]
+                team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
+                if i % 10 == 0:
                     action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: team_states,
                                                                                 l_a.main_q.ball_state: ball_states,
                                                                                 l_a.main_q.curr_rob_state: curr_robs,
@@ -234,9 +238,10 @@ def test_model(team_size):
                 i += 1
                 print(prev_ac)
                 s, _, _ = env.step_discrete(prev_ac)
+            env.kill_process()
 
 
 if __name__ == "__main__":
-    train(4, save_dir="./saves", save_rate=5, load_last=True)
+    train(5, save_dir="./saves", save_rate=5, load_last=True)
     # test_model(4)
 

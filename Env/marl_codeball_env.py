@@ -86,13 +86,14 @@ class CodeBallEnv(object):
     rules: Rules
     teammates: list()
 
-    def __init__(self, n):
+    def __init__(self, n, show=False):
         self.n = n
         self.observation_space = [Space(True, (STATE_SIZE, )) for _ in range(self.n)]
         self.action_space = [Space(True, (ACTION_SHAPE, )) for _ in range(self.n)]
         self.local_process = None
         self.process_runner = None
         self.flat_state_len = 6 * (2 * n + 1) + 5
+        self.show = show
 
     @staticmethod
     def get_teammates(game: Game):
@@ -109,10 +110,17 @@ class CodeBallEnv(object):
 
         # self.local_process = subprocess.Popen([EXE_PATH,  "--no-countdown", "--p1", "tcp-{}".format(Runner.PORT1),
         #                                        "--p2", "keyboard"])
-        self.local_process = subprocess.Popen([EXE_PATH, "--noshow", "--no-countdown", "--team-size",
-                                               "{}".format(self.n),
-                                               "--p1", "tcp-{}".format(Runner.PORT1),
-                                               "--p2", "helper"])
+        if not self.show:
+            self.local_process = subprocess.Popen([EXE_PATH, "--noshow",
+                                                   "--no-countdown", "--team-size",
+                                                   "{}".format(self.n),
+                                                   "--p1", "tcp-{}".format(Runner.PORT1),
+                                                   "--p2", "helper"])
+        else:
+            self.local_process = subprocess.Popen([EXE_PATH, "--no-countdown", "--team-size",
+                                                   "{}".format(self.n),
+                                                   "--p1", "tcp-{}".format(Runner.PORT1),
+                                                   "--p2", "helper"])
         if self.process_runner is not None:
             self.process_runner.remote_process_client.socket.close()
         self.process_runner = Runner()
@@ -154,6 +162,9 @@ class CodeBallEnv(object):
         my_team.extend(other_team)
         my_team.append(ball_state)
         return reshape(my_team, [-1])
+
+    def kill_process(self):
+        self.local_process.kill()
 
     @staticmethod
     def extract_features(flat_state):
