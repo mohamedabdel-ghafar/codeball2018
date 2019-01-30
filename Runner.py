@@ -42,6 +42,7 @@ class Runner:
         print("reading rules")
         self.read_rules_wrapper()
         self.curr_game = None
+        self.defenders_id = []
         me_c = 0
         print("reading game")
         self.read_game_wrapper()
@@ -53,6 +54,7 @@ class Runner:
         # print("goin int init runner loop1")
         teammate_q = list()
         self.next_friend = {}
+        num_def = 0
         for robot_c in robots_list:
             if robot_c.is_teammate:
                 self.indx_to_id[me_c] = robot_c.id

@@ -92,7 +92,7 @@ class CodeBallEnv(object):
         self.action_space = [Space(True, (ACTION_SHAPE, )) for _ in range(self.n)]
         self.local_process = None
         self.process_runner = None
-        self.flat_state_len = 6 * (2 * n + 1) + 5
+        self.flat_state_len = 6 * (2 * n + 1)
         self.show = show
 
     @staticmethod
@@ -149,7 +149,6 @@ class CodeBallEnv(object):
             return zeros([self.flat_state_len])
         my_team = list()
         other_team = list()
-        other_team_ac = list()
         for c_robot in game.robots:
             rob_state = [c_robot.x, c_robot.y, c_robot.z, c_robot.velocity_x, c_robot.velocity_y, c_robot.velocity_z]
             if c_robot.is_teammate:
@@ -166,9 +165,11 @@ class CodeBallEnv(object):
     def kill_process(self):
         self.local_process.kill()
 
-    @staticmethod
-    def extract_features(flat_state):
-        return reshape(flat_state, [-1, STATE_SIZE])
+    def extract_features(self, flat_states):
+        ret = []
+        for i in range(len(flat_states)):
+            ret.append(reshape(flat_states[i], [2*self.n + 1, STATE_SIZE]))
+        return array(ret)
 
     def stand_in_goal(self, curr_robot):
         target_pos_x = (self.rules.arena.goal_width*(self.process_runner.id_to_indx[curr_robot.id] + 1) /
@@ -325,14 +326,24 @@ class CodeBallEnv(object):
         self.process_runner.remote_process_client.write(to_write_actions, "")
         new_game_state = self.process_runner.read_game_wrapper()
         if new_game_state is None:
-            return None, 0, True
+            return None, [0] * self.n, True
         my_indx = 1 - int(new_game_state.players[0].me)
         if new_game_state.players[my_indx].score != self.curr_me_score:
-            reward = 1
+            reward = [1] * self.n
         elif new_game_state.players[1 - my_indx].score != self.curr_ad_score:
-            reward = -1
+            reward = [-1] * self.n
         else:
-            reward = -0.01*(self.rules.arena.depth/2 + self.rules.arena.bottom_radius - new_game_state.ball.z)
+            reward = [-0.0005*(self.rules.arena.depth/2 + self.rules.arena.bottom_radius - new_game_state.ball.z)]
+            reward = reward * self.n
+            ball_x = self.process_runner.curr_game.ball.x
+            ball_z = self.process_runner.curr_game.ball.z
+            ball_y = self.process_runner.curr_game.ball.y
+            for robot in self.process_runner.curr_game.robots:
+                if robot.is_teammate:
+                    reward[self.process_runner.id_to_indx[robot.id]] -= 0.0005 * length_3d(robot.x - ball_x,
+                                                                                          robot.y - ball_y,
+                                                                                          robot.z - ball_z)
+
         self.curr_ad_score = new_game_state.players[1-my_indx].score
         self.curr_me_score = new_game_state.players[my_indx].score
         return new_game_state, reward, False

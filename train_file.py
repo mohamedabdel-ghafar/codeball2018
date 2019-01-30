@@ -1,7 +1,7 @@
 from ml import LearningAgent, ReplayBuffer
 from Env import CodeBallEnv
 from Env.marl_codeball_env import count_actions
-from numpy import random as np_rand, reshape, array, mean as np_mean, zeros, shape, int32 as np_int32
+from numpy import random as np_rand, reshape, array, mean as np_mean, zeros, vstack, repeat
 import tensorflow as tf
 import os
 from ml.ml_model import NUM_ACTIONS
@@ -42,23 +42,6 @@ max_epLength = 100000
 path = "./dqn"
 # mix percentage between target network current values and primary network values
 tau = 0.001
-
-
-def expand_state(my_team: list, other_team: list, ball_state):
-    ball_states = []
-    team_states = []
-    c_robs = []
-    for i in range(len(my_team)):
-        c_i = my_team[i]
-        f_p = my_team[:i].tolist()
-        if i < len(my_team) - 1:
-            s_p = my_team[i+1:]
-            f_p.extend(s_p)
-        f_p.extend(other_team)
-        c_robs.append(c_i)
-        team_states.append(f_p)
-        ball_states.append(ball_state)
-    return team_states, c_robs, ball_states
 
 
 def update_target_graph(tfVars, tau):
@@ -116,63 +99,44 @@ def train(team_size, save_rate, save_dir, load_last=False):
                 if np_rand.rand(1) < e or total_steps < pre_train_steps:
                     action_index_list = np_rand.random_integers(0, NUM_ACTIONS-1, team_size)
                 else:
-                    game_repr = CodeBallEnv.extract_features(s)
-                    my_team = game_repr[:team_size]
-                    other_team = game_repr[team_size: 2*team_size]
-                    ball_state = game_repr[-1]
-                    team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
-                    action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: team_states,
-                                                                                l_a.main_q.ball_state: ball_states,
-                                                                                l_a.main_q.curr_rob_state: curr_robs,
-                                                                                l_a.main_q.action:
-                                                                                    zeros([team_size], dtype=np_int32)})
+                    game_repr = my_env.extract_features([s])
+                    action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: game_repr})[0]
                 new_state, reward, done = my_env.step_discrete(action_index_list)
-                ep_buffer.add([(s, action_index_list, my_env.process_state(new_state), reward, done)], flatten=False)
+                ep_buffer.add([[s, action_index_list, my_env.process_state(new_state), reward, done]], flatten=False)
                 total_steps += 1
                 if total_steps > pre_train_steps:
                     if e > endE:
                         e -= step_drop
                     if total_steps % update_freq == 0:
-                        train_batch = ep_buffer.sample(batch_size)
-                        for counter in range(batch_size):
-                            curr_s, actions, next_s, r, d,  = train_batch[counter]
-                            # now we have to predict actions of next_s using main_q, but estimate Q(s',a) using target_q
-                            next_s = CodeBallEnv.extract_features(next_s)
-                            my_team = next_s[:team_size]
-                            other_team = next_s[team_size: 2*team_size]
-                            ball_state = next_s[2*team_size]
-                            team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
-                            actions, q_scores_next = sess.run([l_a.main_q.predict, l_a.target_q.q_out],
-                                                              feed_dict={
-                                                                  l_a.main_q.input: team_states,
-                                                                  l_a.main_q.curr_rob_state: curr_robs,
-                                                                  l_a.main_q.ball_state: ball_states,
-                                                                  l_a.main_q.action: zeros([team_size], dtype=np_int32),
-                                                                  l_a.target_q.input: team_states,
-                                                                  l_a.target_q.curr_rob_state: curr_robs,
-                                                                  l_a.target_q.ball_state: ball_states,
-                                                                  l_a.target_q.action:
-                                                                      zeros([team_size], dtype=np_int32)
-                                                              })
-                            q_sp_a = q_scores_next[range(team_size), actions]
-                            rew_rep = array([r for _ in range(team_size)])
-                            end_mul = array([1 - int(d) for _ in range(team_size)])
-                            q_target = rew_rep + y * end_mul * q_sp_a
-                            curr_s = CodeBallEnv.extract_features(curr_s)
-                            my_team = curr_s[:team_size]
-                            other_team = curr_s[team_size: 2 * team_size]
-                            ball_state = curr_s[2 * team_size]
-                            team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
-                            sess.run(l_a.main_q.update, feed_dict={
-                                l_a.main_q.input: team_states,
-                                l_a.main_q.curr_rob_state: curr_robs,
-                                l_a.main_q.ball_state: ball_states,
-                                l_a.main_q.action: action_index_list,
-                                l_a.main_q.target_q: q_target
-                            })
-                            for op in target_ops:
-                                sess.run(op)
-                rAll += reward
+                        train_batch = array(ep_buffer.sample(batch_size))
+                        curr_s_n = train_batch[:, 0]
+                        action_n = train_batch[:, 1]
+                        next_s_n = train_batch[:, 2]
+                        rew_n = train_batch[:, 3]
+                        done_n = train_batch[:, 4]
+                        curr_s_n = my_env.extract_features(curr_s_n)
+                        next_s_n = my_env.extract_features(next_s_n)
+                        actions_next_n, q_scores_next = sess.run([l_a.main_q.predict, l_a.target_q.q_out],
+                                                                 feed_dict={l_a.main_q.input: next_s_n,
+                                                                            l_a.target_q.input: next_s_n})
+                        q_sp_a = []
+                        for j in range(batch_size):
+                            q_sp_a.append(q_scores_next[j][range(team_size), actions_next_n[j]])
+                        q_sp_a = array(q_sp_a)
+                        end_mul = reshape(1 - done_n, [-1, 1])
+                        to_add = y*end_mul*q_sp_a
+                        rew_n = vstack(rew_n)
+                        q_target = rew_n + to_add
+                        action_n = vstack(action_n)
+                        sess.run(l_a.main_q.update,
+                                 feed_dict={
+                                     l_a.main_q.input: curr_s_n,
+                                     l_a.main_q.target_q: q_target,
+                                     l_a.main_q.action: action_n,
+                                 })
+                        for op in target_ops:
+                            sess.run(op)
+                rAll += sum(reward)
                 s = new_state
                 if done or j == max_epLength:
                     print(j)
@@ -187,7 +151,7 @@ def train(team_size, save_rate, save_dir, load_last=False):
                 print("Saved Model")
                 print("count actions: ", list(count_actions))
                 print("curr e:", round(e, 4))
-            if i % 20 == 0:
+            if i % 50 == 0:
                 test_model(team_size)
             if len(rList) % 10 == 0:
                 print(total_steps, np_mean(rList[-10:]), e)
@@ -220,28 +184,19 @@ def test_model(team_size):
         l_a = LearningAgent(team_size)
         saver = tf.train.Saver()
         saver.restore(sess=sess, save_path=model_path)
-
-        with tf.variable_scope("test_graph") as test_grpah:
-            while s is not None:
-                s = env.process_state(s)
-                game_repr = CodeBallEnv.extract_features(s)
-                my_team = game_repr[:team_size]
-                other_team = game_repr[team_size: 2 * team_size]
-                ball_state = game_repr[-1]
-                team_states, curr_robs, ball_states = expand_state(my_team, other_team, ball_state)
-                if i % 10 == 0:
-                    action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: team_states,
-                                                                                l_a.main_q.ball_state: ball_states,
-                                                                                l_a.main_q.curr_rob_state: curr_robs,
-                                                                                l_a.main_q.action: zeros([team_size])})
-                    prev_ac = action_index_list
-                i += 1
-                print(prev_ac)
-                s, _, _ = env.step_discrete(prev_ac)
-            env.kill_process()
+        while s is not None:
+            s = env.process_state(s)
+            game_repr = env.extract_features([s])
+            if i % 10 == 0:
+                action_index_list = sess.run(l_a.main_q.predict, feed_dict={l_a.main_q.input: game_repr})[0]
+                prev_ac = action_index_list
+            i += 1
+            print(prev_ac)
+            s, _, _ = env.step_discrete(prev_ac)
+        env.kill_process()
 
 
 if __name__ == "__main__":
-    train(5, save_dir="./saves", save_rate=5, load_last=True)
+    train(5, save_dir="./saves", save_rate=5, load_last=False)
     # test_model(4)
 
