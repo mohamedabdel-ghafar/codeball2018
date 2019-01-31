@@ -25,13 +25,13 @@ update_freq = 500
 # Discount factor on the target Q-values
 y = .99
 # Starting chance of random action
-startE = 1
+startE = 0.6
 # Final chance of random action
 endE = 0.1
 #
 total_steps_2 = sum([962623, 962777, 964412, 961574, 964653, 963611, 963644, 963174])
 # How many steps of training to reduce startE to endE.
-annealing_steps = 10000000
+annealing_steps = 10000000 - 245*20000
 # How many episodes of game environment to train network with.
 num_episodes = 10000
 # How many steps of random actions before training begins.
@@ -151,7 +151,7 @@ def train(team_size, save_rate, save_dir, load_last=False):
                 print("Saved Model")
                 print("count actions: ", list(count_actions))
                 print("curr e:", round(e, 4))
-            if i % 50 == 0:
+            if i % 70 == 50:
                 test_model(team_size)
             if len(rList) % 10 == 0:
                 print(total_steps, np_mean(rList[-10:]), e)
@@ -175,7 +175,7 @@ def test_model(team_size):
     ckpt = tf.train.get_checkpoint_state(os.path.join("", "saves"))
     model_path = ckpt.model_checkpoint_path
 
-    env = CodeBallEnv(team_size, show=True)
+    env = CodeBallEnv(team_size, show=False)
     s = env.reset()
     i = 0
     prev_ac = zeros([team_size])
